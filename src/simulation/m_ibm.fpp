@@ -44,6 +44,11 @@ module m_ibm
     type(integer_field), public :: ib_markers
     $:GPU_DECLARE(create='[ib_markers]')
 
+    !> Markers of the static IBs only, drawn once on the first moving-IB update and copied into ib_markers each step
+    type(integer_field) :: ib_markers_static
+    $:GPU_DECLARE(create='[ib_markers_static]')
+    logical :: ib_static_ready = .false.
+
     !> 1 at ghost points whose image point reaches the fluid, 0 elsewhere. Ghost points with a buried image point average over these
     !! neighbors, and never over each other.
     type(integer_field) :: corrected_gps
@@ -75,13 +80,16 @@ contains
 
         if (p > 0) then
             @:ALLOCATE(ib_markers%sf(-buff_size:m+buff_size, -buff_size:n+buff_size, -buff_size:p+buff_size))
+            @:ALLOCATE(ib_markers_static%sf(-buff_size:m+buff_size, -buff_size:n+buff_size, -buff_size:p+buff_size))
             @:ALLOCATE(corrected_gps%sf(-buff_size:m+buff_size, -buff_size:n+buff_size, -buff_size:p+buff_size))
         else
             @:ALLOCATE(ib_markers%sf(-buff_size:m+buff_size, -buff_size:n+buff_size, 0:0))
+            @:ALLOCATE(ib_markers_static%sf(-buff_size:m+buff_size, -buff_size:n+buff_size, 0:0))
             @:ALLOCATE(corrected_gps%sf(-buff_size:m+buff_size, -buff_size:n+buff_size, 0:0))
         end if
 
         @:ACC_SETUP_SFs(ib_markers)
+        @:ACC_SETUP_SFs(ib_markers_static)
         @:ACC_SETUP_SFs(corrected_gps)
 
         $:GPU_ENTER_DATA(copyin='[num_gps]')
@@ -1192,9 +1200,21 @@ contains
 
         ! Clears the existing immersed boundary indices over the same halo extent s_get_bounding_indices draws them
         z_buff_size = 0; if (p /= 0) z_buff_size = buff_size
+        ! static bodies: draw once (first call), afterwards every update starts from their markers
+        if (.not. ib_static_ready) then
+            $:GPU_PARALLEL_LOOP(private='[i, j, k]')
+            do i = -buff_size, m + buff_size; do j = -buff_size, n + buff_size; do k = -z_buff_size, p + z_buff_size
+                ib_markers_static%sf(i, j, k) = 0
+            end do; end do; end do
+            $:END_GPU_PARALLEL_LOOP()
+            ib_patch_select = 2
+            call s_apply_ib_patches(ib_markers_static)
+            ib_patch_select = 0
+            ib_static_ready = .true.
+        end if
         $:GPU_PARALLEL_LOOP(private='[i, j, k]')
         do i = -buff_size, m + buff_size; do j = -buff_size, n + buff_size; do k = -z_buff_size, p + z_buff_size
-            ib_markers%sf(i, j, k) = 0._wp
+            ib_markers%sf(i, j, k) = ib_markers_static%sf(i, j, k)
             corrected_gps%sf(i, j, k) = 0
         end do; end do; end do
         $:END_GPU_PARALLEL_LOOP()
@@ -1210,7 +1230,9 @@ contains
 
         ! recompute the new ib_patch locations and broadcast them.
         call nvtxStartRange("APPLY-IB-PATCHES")
+        ib_patch_select = 1  ! only the moving bodies; the static ones came from ib_markers_static
         call s_apply_ib_patches(ib_markers)
+        ib_patch_select = 0
         call nvtxEndRange
 
         call nvtxStartRange("COMPUTE-GHOST-POINTS")
@@ -2039,6 +2061,7 @@ contains
         integer :: i
 
         @:DEALLOCATE(ib_markers%sf)
+        @:DEALLOCATE(ib_markers_static%sf)
         @:DEALLOCATE(corrected_gps%sf)
         do i = 1, num_ib_airfoils_max
             if (allocated(ib_airfoil_grids(i)%upper)) then

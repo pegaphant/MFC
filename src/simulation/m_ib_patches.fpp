@@ -23,6 +23,10 @@ module m_ib_patches
 
     implicit none
 
+    !> Which IBs s_apply_ib_patches draws: 0 all, 1 only moving (moving_ibm /= 0), 2 only static. s_update_mib draws the static
+    !! bodies once and afterwards only the moving ones (the 3D STL winding number costs cells x triangles per body).
+    integer, public :: ib_patch_select = 0
+
     private; public :: s_apply_ib_patches, s_update_ib_rotation_matrix, s_instantiate_STL_models, s_decode_patch_periodicity, &
         & s_encode_patch_periodicity, s_initialize_ib_airfoils, s_get_periodicities, s_get_ib_bound, s_get_neighborhood_idx, &
         & s_update_ib_lookup, s_compact_ib_lookup, s_merge_ib_lookup
@@ -66,6 +70,8 @@ contains
                 do yp = yp_lower, yp_upper
                     do zp = zp_lower, zp_upper
                         do patch_id = 1, num_ibs
+                            if (ib_patch_select == 1 .and. patch_ib(patch_id)%moving_ibm == 0) cycle
+                            if (ib_patch_select == 2 .and. patch_ib(patch_id)%moving_ibm /= 0) cycle
                             center(1) = patch_ib(patch_id)%x_centroid + real(xp, wp)*(glb_bounds(1)%end - glb_bounds(1)%beg)
                             center(2) = patch_ib(patch_id)%y_centroid + real(yp, wp)*(glb_bounds(2)%end - glb_bounds(2)%beg)
                             center(3) = patch_ib(patch_id)%z_centroid + real(zp, wp)*(glb_bounds(3)%end - glb_bounds(3)%beg)
@@ -138,6 +144,8 @@ contains
             do xp = xp_lower, xp_upper
                 do yp = yp_lower, yp_upper
                     do patch_id = 1, num_ibs
+                        if (ib_patch_select == 1 .and. patch_ib(patch_id)%moving_ibm == 0) cycle
+                        if (ib_patch_select == 2 .and. patch_ib(patch_id)%moving_ibm /= 0) cycle
                         center(1) = patch_ib(patch_id)%x_centroid + real(xp, wp)*(glb_bounds(1)%end - glb_bounds(1)%beg)
                         center(2) = patch_ib(patch_id)%y_centroid + real(yp, wp)*(glb_bounds(2)%end - glb_bounds(2)%beg)
                         center(3) = 0._wp
@@ -217,8 +225,10 @@ contains
                 do yp = yp_lower, yp_upper
                     do zp = zp_lower, zp_upper
                         $:GPU_PARALLEL_LOOP(private='[i, il, ir, j, jl, jr, k, kl, kr, xyz_local, length, radius, patch_id, &
-                                            & airfoil_id, model_id, encoded_patch_id, center, eta]', copyin='[xp, yp, zp]')
+                                            & airfoil_id, model_id, encoded_patch_id, center, eta]', copyin='[xp, yp, zp, ib_patch_select]')
                         do patch_id = 1, num_ibs
+                            if (ib_patch_select == 1 .and. patch_ib(patch_id)%moving_ibm == 0) cycle
+                            if (ib_patch_select == 2 .and. patch_ib(patch_id)%moving_ibm /= 0) cycle
                             center(1) = patch_ib(patch_id)%x_centroid + real(xp, wp)*(glb_bounds(1)%end - glb_bounds(1)%beg)
                             center(2) = patch_ib(patch_id)%y_centroid + real(yp, wp)*(glb_bounds(2)%end - glb_bounds(2)%beg)
                             center(3) = patch_ib(patch_id)%z_centroid + real(zp, wp)*(glb_bounds(3)%end - glb_bounds(3)%beg)
@@ -301,8 +311,10 @@ contains
             do xp = xp_lower, xp_upper
                 do yp = yp_lower, yp_upper
                     $:GPU_PARALLEL_LOOP(private='[i, il, ir, j, jl, jr, xyz_local, length, radius, patch_id, airfoil_id, &
-                                        & model_id, encoded_patch_id, center, eta]', copyin='[xp, yp]')
+                                        & model_id, encoded_patch_id, center, eta]', copyin='[xp, yp, ib_patch_select]')
                     do patch_id = 1, num_ibs
+                        if (ib_patch_select == 1 .and. patch_ib(patch_id)%moving_ibm == 0) cycle
+                        if (ib_patch_select == 2 .and. patch_ib(patch_id)%moving_ibm /= 0) cycle
                         center(1) = patch_ib(patch_id)%x_centroid + real(xp, wp)*(glb_bounds(1)%end - glb_bounds(1)%beg)
                         center(2) = patch_ib(patch_id)%y_centroid + real(yp, wp)*(glb_bounds(2)%end - glb_bounds(2)%beg)
                         center(3) = 0._wp
