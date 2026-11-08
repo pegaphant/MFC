@@ -91,6 +91,12 @@ if (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
     if (MFC_OpenACC OR MFC_OpenMP)
         message(FATAL_ERROR "ERROR: MFC with GPU processing is not currently compatible with GNU compilers. Please use NVIDIA or Cray compilers.\n${__err_msg}")
     endif()
+    if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+        # PF-DIAG: bei der ersten ungueltigen Fliesskomma-Rechnung abbrechen und die Zeile nennen
+        add_compile_options($<$<COMPILE_LANGUAGE:Fortran>:-ffpe-trap=invalid,zero,overflow>
+                            $<$<COMPILE_LANGUAGE:Fortran>:-fbacktrace>
+                            $<$<COMPILE_LANGUAGE:Fortran>:-fcheck=bounds>)
+    endif()
 elseif ((CMAKE_Fortran_COMPILER_ID STREQUAL "NVHPC") OR (CMAKE_Fortran_COMPILER_ID STREQUAL "PGI"))
     if (CMAKE_Fortran_COMPILER_VERSION VERSION_LESS 21.7)
         message(FATAL_ERROR "ERROR: When using NVHPC, v21.7 or newer is required to build MFC.\n${__err_msg}")
