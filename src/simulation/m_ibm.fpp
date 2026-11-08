@@ -1431,6 +1431,9 @@ contains
                                 do l = 1, num_dims
                                     $:GPU_ATOMIC(atomic='update')
                                     forces(ib_idx, l) = forces(ib_idx, l) + (local_force_contribution(l)*cell_volume)
+                                end do
+                                ! torque always has three components: in 2D the in-plane rotation is the z component
+                                do l = 1, 3
                                     $:GPU_ATOMIC(atomic='update')
                                     torques(ib_idx, l) = torques(ib_idx, l) + local_torque_contribution(l)*cell_volume
                                 end do
