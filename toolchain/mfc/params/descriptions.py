@@ -410,6 +410,7 @@ PATTERNS = [
     (r"bc_([xyz])%alpha_in\((\d+)\)", "Inlet volume fraction of fluid {1} at {0}-boundary"),
     (r"bc_([xyz])%pres_in", "Inlet pressure at {0}-boundary"),
     (r"bc_([xyz])%pres_out", "Outlet pressure at {0}-boundary"),
+    (r"bc_([xyz])%del_out", "GRCBC outflow pressure relaxation length at {0}-boundary"),
     (r"bc_([xyz])%vb(\d+)", "Boundary velocity component {1} at {0}-begin"),
     (r"bc_([xyz])%ve(\d+)", "Boundary velocity component {1} at {0}-end"),
     (r"bc_([xyz])%grcbc_in", "Enable GRCBC at {0}-inlet"),

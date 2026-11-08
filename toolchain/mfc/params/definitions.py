@@ -81,6 +81,7 @@ HINTS = {
         "vel_out": "Outlet velocity component (used with `grcbc_vel_out`)",
         "pres_in": "Inlet pressure (used with `grcbc_in`)",
         "pres_out": "Outlet pressure (used with `grcbc_out`)",
+        "del_out": "GRCBC outflow pressure relaxation length (0 = max cell width)",
         "alpha_rho_in": "Inlet partial density per fluid (used with `grcbc_in`)",
         "alpha_in": "Inlet volume fraction per fluid (used with `grcbc_in`)",
         "vb1": "Boundary velocity component 1 at domain begin",
@@ -1139,7 +1140,7 @@ def _load():
     # Extended BC
     for d in ["x", "y", "z"]:
         px = f"bc_{d}%"
-        for a in ["vb1", "vb2", "vb3", "ve1", "ve2", "ve3", "pres_in", "pres_out", "vel_in_ramp", "vel_in_t0", "vel_in_frac0"]:
+        for a in ["vb1", "vb2", "vb3", "ve1", "ve2", "ve3", "pres_in", "pres_out", "del_out", "vel_in_ramp", "vel_in_t0", "vel_in_frac0"]:
             _r(f"{px}{a}", REAL, {"bc"})
         for a in ["grcbc_in", "grcbc_out", "grcbc_vel_out"]:
             _r(f"{px}{a}", LOG, {"bc"})

@@ -212,6 +212,8 @@ contains
     end subroutine s_compute_nonreflecting_subsonic_inflow_L
 
     !> Nonreflecting subsonic outflow CBC (Thompson 1990, pg. 454)
+    !> PF-Fix: entropy/vorticity waves (lambda2 = u) only leave the domain when lambda2 < 0 in the boundary frame; on backflow
+    !> they enter and must not be built from interior one-sided derivatives (cf. s_compute_nonreflecting_subsonic_buffer_L).
     subroutine s_compute_nonreflecting_subsonic_outflow_L(lambda, L, rho, c, mf, dalpha_rho_ds, dpres_ds, dvel_ds, dadv_ds, dYs_ds)
 
         $:GPU_ROUTINE(function_name='s_compute_nonreflecting_subsonic_outflow_L', parallelism='[seq]', cray_inline=True)
@@ -236,10 +238,10 @@ contains
         real(wp), intent(in)                             :: dpres_ds
 
         L(1) = f_base_L1(lambda, rho, c, dpres_ds, dvel_ds)
-        call s_fill_density_L(L, 1._wp, lambda(2), c, mf, dalpha_rho_ds, dpres_ds)
-        call s_fill_velocity_L(L, 1._wp, lambda(2), dvel_ds)
-        call s_fill_advection_L(L, 1._wp, lambda(2), dadv_ds)
-        call s_fill_chemistry_L(L, 1._wp, lambda(2), dYs_ds)
+        call s_fill_density_L(L, 1._wp, min(lambda(2), 0._wp), c, mf, dalpha_rho_ds, dpres_ds)
+        call s_fill_velocity_L(L, 1._wp, min(lambda(2), 0._wp), dvel_ds)
+        call s_fill_advection_L(L, 1._wp, min(lambda(2), 0._wp), dadv_ds)
+        call s_fill_chemistry_L(L, 1._wp, min(lambda(2), 0._wp), dYs_ds)
         L(eqn_idx%adv%end) = 0._wp
 
     end subroutine s_compute_nonreflecting_subsonic_outflow_L
@@ -268,9 +270,9 @@ contains
         real(wp), intent(in) :: dpres_ds
 
         L(1) = f_base_L1(lambda, rho, c, dpres_ds, dvel_ds)
-        call s_fill_density_L(L, 1._wp, lambda(2), c, mf, dalpha_rho_ds, dpres_ds)
-        call s_fill_velocity_L(L, 1._wp, lambda(2), dvel_ds)
-        call s_fill_advection_L(L, 1._wp, lambda(2), dadv_ds)
+        call s_fill_density_L(L, 1._wp, min(lambda(2), 0._wp), c, mf, dalpha_rho_ds, dpres_ds)
+        call s_fill_velocity_L(L, 1._wp, min(lambda(2), 0._wp), dvel_ds)
+        call s_fill_advection_L(L, 1._wp, min(lambda(2), 0._wp), dadv_ds)
         L(eqn_idx%adv%end) = L(1) + 2._wp*rho*c*lambda(2)*dvel_ds(dir_idx(1))
 
     end subroutine s_compute_force_free_subsonic_outflow_L
@@ -299,9 +301,9 @@ contains
         real(wp), intent(in) :: dpres_ds
 
         L(1) = f_base_L1(lambda, rho, c, dpres_ds, dvel_ds)
-        call s_fill_density_L(L, 1._wp, lambda(2), c, mf, dalpha_rho_ds, dpres_ds)
-        call s_fill_velocity_L(L, 1._wp, lambda(2), dvel_ds)
-        call s_fill_advection_L(L, 1._wp, lambda(2), dadv_ds)
+        call s_fill_density_L(L, 1._wp, min(lambda(2), 0._wp), c, mf, dalpha_rho_ds, dpres_ds)
+        call s_fill_velocity_L(L, 1._wp, min(lambda(2), 0._wp), dvel_ds)
+        call s_fill_advection_L(L, 1._wp, min(lambda(2), 0._wp), dadv_ds)
         L(eqn_idx%adv%end) = -L(1)
 
     end subroutine s_compute_constant_pressure_subsonic_outflow_L

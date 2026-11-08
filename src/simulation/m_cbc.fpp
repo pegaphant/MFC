@@ -313,6 +313,7 @@ contains
                 end if
                 Del_in(${CBC_DIR}$) = maxval(d${XYZ}$)
                 Del_out(${CBC_DIR}$) = maxval(d${XYZ}$)
+                if (bc_${XYZ}$%del_out > 0._wp) Del_out(${CBC_DIR}$) = bc_${XYZ}$%del_out  ! PF
                 pres_in(${CBC_DIR}$) = bc_${XYZ}$%pres_in
                 pres_out(${CBC_DIR}$) = bc_${XYZ}$%pres_out
                 do i = 1, num_fluids

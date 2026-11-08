@@ -109,6 +109,7 @@ module m_derived_types
         real(wp)                            :: ve2
         real(wp)                            :: ve3
         real(wp)                            :: pres_in, pres_out
+        real(wp)                            :: del_out  !< PF: GRCBC outflow pressure relaxation length (0 = max cell width)
         real(wp), dimension(3)              :: vel_in, vel_out
         real(wp), dimension(num_fluids_max) :: alpha_rho_in, alpha_in
         logical                             :: grcbc_in, grcbc_out, grcbc_vel_out

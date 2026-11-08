@@ -166,6 +166,7 @@ contains
             & 'bc_z%vb1','bc_z%vb2','bc_z%vb3','bc_z%ve1','bc_z%ve2','bc_z%ve3',           &
             & 'bc_x%pres_in','bc_x%pres_out','bc_y%pres_in','bc_y%pres_out',               &
             & 'bc_z%pres_in','bc_z%pres_out',                                               &
+            & 'bc_x%del_out','bc_y%del_out','bc_z%del_out',                              &
             & 'bc_x%Twall_in', 'bc_x%Twall_out', 'bc_y%Twall_in', 'bc_y%Twall_out',       &
             & 'bc_z%Twall_in', 'bc_z%Twall_out',                                           &
             & 'bc_x%vel_in_ramp', 'bc_x%vel_in_t0', 'bc_x%vel_in_frac0',                   &
