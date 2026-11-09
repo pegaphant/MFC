@@ -1077,15 +1077,16 @@ contains
 
     end subroutine s_compute_directional_rhs
 
-    !> No mass through faces between the fluid and a ghost cell of a moving wall that slides along itself (ib_wall_w = 1, see
-    !! m_ibm). There the Riemann flux mixes the rebuilt ghost state into the fluid and, unlike at a wall at rest, does not sum to
-    !! zero over the staircase: a turning circle in a ring gained 7 % mass in two turns. Where the wall sweeps (v.n /= 0) the
-    !! Riemann flux is kept, it carries the displaced gas. Momentum and energy fluxes, including the viscous stress that carries the
-    !! no-slip condition, are left as they are.
+    !> Wall flux on faces between the fluid and a ghost cell of a moving wall that slides along itself (ib_wall_w = 1, see m_ibm):
+    !! no mass, no energy, and of the momentum only the pressure of the fluid cell on the face. There the Riemann flux mixes the
+    !! rebuilt ghost state into the fluid and, unlike at a wall at rest, does not sum to zero over the staircase: a turning circle
+    !! in a ring gained 7 % mass in two turns. Zeroing only the mass flux let momentum and energy into cells that got no mass, and
+    !! the 3D air turbine blew up within 60 us. Where the wall sweeps (v.n /= 0) the Riemann flux is kept, it carries the displaced
+    !! gas. The viscous stress, which carries the no-slip condition, lives in flux_src_n and is untouched.
     subroutine s_ib_wall_mass_flux(id)
 
         integer, intent(in) :: id
-        integer             :: i, j, k, l, jj, kk, ll, jw, kw, lw
+        integer             :: i, j, k, l, jj, kk, ll, jw, kw, lw, jf, kf, lf
         integer             :: jb, kb, lb  !< first face index: -1 in the sweep direction (the face below cell 0), else 0
 
         jb = 0; kb = 0; lb = 0
@@ -1093,7 +1094,7 @@ contains
         if (id == 2) kb = -1
         if (id == 3) lb = -1
 
-        $:GPU_PARALLEL_LOOP(private='[i, j, k, l, jj, kk, ll, jw, kw, lw]', collapse=3, copyin='[jb, kb, lb, id]')
+        $:GPU_PARALLEL_LOOP(private='[i, j, k, l, jj, kk, ll, jw, kw, lw, jf, kf, lf]', collapse=3, copyin='[jb, kb, lb, id]')
         do l = lb, p
             do k = kb, n
                 do j = jb, m
@@ -1103,14 +1104,22 @@ contains
                     if (id == 3) ll = l + 1
                     if ((ib_markers%sf(j, k, l) == 0) .neqv. (ib_markers%sf(jj, kk, ll) == 0)) then
                         jw = j; kw = k; lw = l
+                        jf = jj; kf = kk; lf = ll
                         if (ib_markers%sf(j, k, l) == 0) then
                             jw = jj; kw = kk; lw = ll
+                            jf = j; kf = k; lf = l
                         end if
                         if (ib_wall_w(jw, kw, lw, 1) > 0.5_wp) then
                             $:GPU_LOOP(parallelism='[seq]')
                             do i = eqn_idx%cont%beg, eqn_idx%cont%end
                                 flux_n(id)%vf(i)%sf(j, k, l) = 0._wp
                             end do
+                            $:GPU_LOOP(parallelism='[seq]')
+                            do i = eqn_idx%mom%beg, eqn_idx%mom%end
+                                flux_n(id)%vf(i)%sf(j, k, l) = 0._wp
+                            end do
+                            flux_n(id)%vf(eqn_idx%mom%beg + id - 1)%sf(j, k, l) = q_prim_qp%vf(eqn_idx%E)%sf(jf, kf, lf)
+                            flux_n(id)%vf(eqn_idx%E)%sf(j, k, l) = 0._wp
                         end if
                     end if
                 end do
