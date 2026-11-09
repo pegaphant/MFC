@@ -57,6 +57,12 @@ module m_ibm
     type(ghost_point), dimension(:), allocatable :: ghost_points
     $:GPU_DECLARE(create='[ghost_points]')
 
+    !> ib_mass_cons: 1 at ghost cells of a moving body whose wall there slides along itself (|v.n| <= 0.1 |v|, e.g. a turning disk
+    !! or hub), 0 elsewhere (component 1; 2 and 3 unused). m_rhs passes no mass through faces between such a ghost cell and the
+    !! fluid. Only component 1 is used.
+    real(wp), allocatable, dimension(:,:,:,:), public :: ib_wall_w
+    $:GPU_DECLARE(create='[ib_wall_w]')
+
     integer :: num_gps  !< Number of ghost points
 #if defined(MFC_OpenACC)
     $:GPU_DECLARE(create='[gp_layers, num_gps]')
@@ -91,6 +97,14 @@ contains
         @:ACC_SETUP_SFs(ib_markers)
         @:ACC_SETUP_SFs(ib_markers_static)
         @:ACC_SETUP_SFs(corrected_gps)
+
+        if (ib_mass_cons) then
+            if (p > 0) then
+                @:ALLOCATE(ib_wall_w(-buff_size:m+buff_size, -buff_size:n+buff_size, -buff_size:p+buff_size, 1:3))
+            else
+                @:ALLOCATE(ib_wall_w(-buff_size:m+buff_size, -buff_size:n+buff_size, 0:0, 1:3))
+            end if
+        end if
 
         $:GPU_ENTER_DATA(copyin='[num_gps]')
         $:GPU_UPDATE(device='[ib_second_order_vel, ib_ip_min_dist]')
@@ -185,6 +199,7 @@ contains
 
         call s_compute_image_points()
         call s_compute_interpolation_coeffs()
+        if (ib_mass_cons) call s_store_ib_wall_w()
 
         call nvtxEndRange
 
@@ -1257,6 +1272,7 @@ contains
         call s_apply_levelset(ghost_points, num_gps)
         call s_compute_image_points()
         call s_compute_interpolation_coeffs()
+        if (ib_mass_cons) call s_store_ib_wall_w()
         call nvtxEndRange
 
         call nvtxEndRange
@@ -2056,12 +2072,65 @@ contains
     end subroutine s_check_every_patch_marked
 
     !> Finalize the IBM module
+    !> Fill ib_wall_w from the ghost points (see its declaration). Called whenever the ghost points are rebuilt.
+    impure subroutine s_store_ib_wall_w()
+
+        integer                :: i, j, k, l, q, pid, lb, le
+        real(wp), dimension(3) :: nrm, rv, v, om
+        real(wp)               :: vn, s
+
+        lb = 0; le = 0
+        if (p > 0) then
+            lb = -buff_size; le = p + buff_size
+        end if
+
+        $:GPU_PARALLEL_LOOP(private='[j, k, l, q]', collapse=4, copyin='[lb, le]')
+        do q = 1, 3
+            do l = lb, le
+                do k = -buff_size, n + buff_size
+                    do j = -buff_size, m + buff_size
+                        ib_wall_w(j, k, l, q) = 0._wp
+                    end do
+                end do
+            end do
+        end do
+        $:END_GPU_PARALLEL_LOOP()
+
+        $:GPU_PARALLEL_LOOP(private='[i, j, k, l, q, pid, nrm, rv, v, om, vn, s]', present='[ghost_points]')
+        do i = 1, num_gps
+            j = ghost_points(i)%loc(1)
+            k = ghost_points(i)%loc(2)
+            l = ghost_points(i)%loc(3)
+            pid = ghost_points(i)%ib_patch_id
+            nrm = ghost_points(i)%levelset_norm
+            s = abs(nrm(1)) + abs(nrm(2)) + abs(nrm(3))
+            if (s > 0._wp .and. patch_ib(pid)%moving_ibm /= 0) then
+                nrm = nrm/sqrt(sum(nrm**2))
+                rv(1) = x_cc(j) - patch_ib(pid)%x_centroid
+                rv(2) = y_cc(k) - patch_ib(pid)%y_centroid
+                rv(3) = 0._wp
+                if (p > 0) rv(3) = z_cc(l) - patch_ib(pid)%z_centroid
+                om = patch_ib(pid)%angular_vel
+                v(1) = patch_ib(pid)%vel(1) + om(2)*rv(3) - om(3)*rv(2)
+                v(2) = patch_ib(pid)%vel(2) + om(3)*rv(1) - om(1)*rv(3)
+                v(3) = patch_ib(pid)%vel(3) + om(1)*rv(2) - om(2)*rv(1)
+                vn = v(1)*nrm(1) + v(2)*nrm(2) + v(3)*nrm(3)
+                if (abs(vn) <= 0.1_wp*sqrt(sum(v**2))) ib_wall_w(j, k, l, 1) = 1._wp
+            end if
+        end do
+        $:END_GPU_PARALLEL_LOOP()
+
+    end subroutine s_store_ib_wall_w
+
     impure subroutine s_finalize_ibm_module()
 
         integer :: i
 
         @:DEALLOCATE(ib_markers%sf)
         @:DEALLOCATE(ib_markers_static%sf)
+        if (ib_mass_cons) then
+            @:DEALLOCATE(ib_wall_w)
+        end if
         @:DEALLOCATE(corrected_gps%sf)
         do i = 1, num_ib_airfoils_max
             if (allocated(ib_airfoil_grids(i)%upper)) then

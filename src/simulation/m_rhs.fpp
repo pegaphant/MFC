@@ -1066,12 +1066,59 @@ contains
             call s_finalize_nc_iface_vel(nc_iface_vel_n(id)%vf, id)
         end if
 
+        ! The IB cells drop their RHS and the ghost state is rebuilt every stage, so whatever mass crosses a face between a
+        ! fluid and an IB cell is created or destroyed. Along a moving no-slip wall that does not cancel (PF, ib_mass_cons).
+        if (ib .and. ib_mass_cons) call s_ib_wall_mass_flux(id)
+
         ! Additional physics and source terms RHS addition for advection source
         call nvtxStartRange("RHS-ADVECTION-SRC")
         call s_compute_advection_source_term(id, rhs_vf, q_cons_qp, q_prim_qp, flux_src_n(id), is_hat_L)
         call nvtxEndRange
 
     end subroutine s_compute_directional_rhs
+
+    !> No mass through faces between the fluid and a ghost cell of a moving wall that slides along itself (ib_wall_w = 1, see
+    !! m_ibm). There the Riemann flux mixes the rebuilt ghost state into the fluid and, unlike at a wall at rest, does not sum to
+    !! zero over the staircase: a turning circle in a ring gained 7 % mass in two turns. Where the wall sweeps (v.n /= 0) the
+    !! Riemann flux is kept, it carries the displaced gas. Momentum and energy fluxes, including the viscous stress that carries the
+    !! no-slip condition, are left as they are.
+    subroutine s_ib_wall_mass_flux(id)
+
+        integer, intent(in) :: id
+        integer             :: i, j, k, l, jj, kk, ll, jw, kw, lw
+        integer             :: jb, kb, lb  !< first face index: -1 in the sweep direction (the face below cell 0), else 0
+
+        jb = 0; kb = 0; lb = 0
+        if (id == 1) jb = -1
+        if (id == 2) kb = -1
+        if (id == 3) lb = -1
+
+        $:GPU_PARALLEL_LOOP(private='[i, j, k, l, jj, kk, ll, jw, kw, lw]', collapse=3, copyin='[jb, kb, lb, id]')
+        do l = lb, p
+            do k = kb, n
+                do j = jb, m
+                    jj = j; kk = k; ll = l
+                    if (id == 1) jj = j + 1
+                    if (id == 2) kk = k + 1
+                    if (id == 3) ll = l + 1
+                    if ((ib_markers%sf(j, k, l) == 0) .neqv. (ib_markers%sf(jj, kk, ll) == 0)) then
+                        jw = j; kw = k; lw = l
+                        if (ib_markers%sf(j, k, l) == 0) then
+                            jw = jj; kw = kk; lw = ll
+                        end if
+                        if (ib_wall_w(jw, kw, lw, 1) > 0.5_wp) then
+                            $:GPU_LOOP(parallelism='[seq]')
+                            do i = eqn_idx%cont%beg, eqn_idx%cont%end
+                                flux_n(id)%vf(i)%sf(j, k, l) = 0._wp
+                            end do
+                        end if
+                    end if
+                end do
+            end do
+        end do
+        $:END_GPU_PARALLEL_LOOP()
+
+    end subroutine s_ib_wall_mass_flux
 
     !> Accumulate advection source contributions from a given coordinate direction into the RHS
     subroutine s_compute_advection_source_term(idir, rhs_vf, q_cons_vf, q_prim_vf, flux_src_n_vf, is_hat_L)

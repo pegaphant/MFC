@@ -711,6 +711,7 @@ def _load():
     _r("ib_coefficient_of_friction", REAL, {"ib"})
     _r("many_ib_patch_parallelism", LOG, {"ib"})
     _r("ib_second_order_vel", LOG, {"ib"})
+    _r("ib_mass_cons", LOG, {"ib"})
     _r("ib_ip_min_dist", REAL, {"ib"})
 
     # Probes
@@ -1496,6 +1497,7 @@ _nv(
     "ib_neighborhood_radius",
     "many_ib_patch_parallelism",
     "ib_second_order_vel",
+    "ib_mass_cons",
     "ib_ip_min_dist",
     "tau_star",
     "cont_damage_s",
