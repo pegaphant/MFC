@@ -57,9 +57,9 @@ module m_ibm
     type(ghost_point), dimension(:), allocatable :: ghost_points
     $:GPU_DECLARE(create='[ghost_points]')
 
-    !> ib_mass_cons: 1 at ghost cells of a moving body whose wall there slides along itself (|v.n| <= 0.1 |v|, e.g. a turning disk
-    !! or hub), 0 elsewhere (component 1; 2 and 3 unused). m_rhs passes no mass through faces between such a ghost cell and the
-    !! fluid. Only component 1 is used.
+    !> ib_mass_cons: 1 at ghost cells of a body at rest, and of a moving body whose wall there slides along itself (|v.n| <= 0.1
+    !! |v|, e.g. a turning disk or hub), 0 elsewhere (component 1; 2 and 3 unused). m_rhs passes no mass through faces between such
+    !! a ghost cell and the fluid. Only component 1 is used.
     real(wp), allocatable, dimension(:,:,:,:), public :: ib_wall_w
     $:GPU_DECLARE(create='[ib_wall_w]')
 
@@ -2104,7 +2104,9 @@ contains
             pid = ghost_points(i)%ib_patch_id
             nrm = ghost_points(i)%levelset_norm
             s = abs(nrm(1)) + abs(nrm(2)) + abs(nrm(3))
-            if (s > 0._wp .and. patch_ib(pid)%moving_ibm /= 0) then
+            if (s > 0._wp .and. patch_ib(pid)%moving_ibm == 0) then
+                ib_wall_w(j, k, l, 1) = 1._wp  ! wall at rest: nothing passes, only the pressure acts
+            else if (s > 0._wp) then
                 nrm = nrm/sqrt(sum(nrm**2))
                 rv(1) = x_cc(j) - patch_ib(pid)%x_centroid
                 rv(2) = y_cc(k) - patch_ib(pid)%y_centroid
