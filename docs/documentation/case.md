@@ -358,7 +358,7 @@ This is enabled by adding ``'elliptic_smoothing': "T",`` and ``'elliptic_smoothi
 | `many_ib_patch_parallelism` | Logical | Parallelize over IB patches instead of grid cells (better for many small patches). |
 | `ib_second_order_vel` | Logical | Extrapolate the ghost-point velocity linearly through the boundary intercept. |
 | `ib_ip_min_dist`      | Real    | Minimum boundary-to-image-point distance, in local cell widths, for `ib_second_order_vel`. |
-| `ib_mass_cons`        | Logical | No mass through the faces between the fluid and the ghost cells of a moving wall that slides along itself. |
+| `ib_mass_cons`        | Logical | Wall flux at the faces between the fluid and the ghost cells of an immersed body (moving or at rest): no mass, no energy, momentum from the fluid-cell pressure only. Viscous fluxes are unchanged. |
 | `geometry`           | Integer | Geometry configuration of the patch.|
 | `x[y,z]_centroid`    | Real    | Centroid of the applied geometry in the [x,y,z]-direction. |
 | `length_x[y,z]`      | Real    | Length, if applicable, in the [x,y,z]-direction. |
