@@ -145,6 +145,7 @@ DESCRIPTIONS = {
     "ib_neighborhood_radius": "Neighborhood radius in ranks for IB awareness",
     "many_ib_patch_parallelism": "Parallelize over IB patches instead of grid cells (better for many small patches)",
     "ib_mass_cons": "Wall flux at faces between fluid and IB ghost cells: no mass, no energy, only pressure in the momentum (moving and resting bodies)",
+    "ib_mass_fix": "Per time step, take back from the fluid next to the bodies the mass the step created or destroyed apart from the domain-boundary fluxes (rigid bodies are impermeable)",
     "ib_second_order_vel": "Extrapolate IB ghost-point velocity linearly through the boundary intercept (second order)",
     "ib_ip_min_dist": "Minimum boundary-to-image-point distance in local cell widths for ib_second_order_vel",
     # Acoustic sources

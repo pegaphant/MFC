@@ -46,8 +46,10 @@ module m_time_steppers
     real(wp), allocatable, dimension(:,:,:,:,:)   :: rhs_mv
     integer, private                              :: num_ts  !< Number of time stages in the time-stepping scheme
     integer                                       :: stor    !< storage index
-    real(wp), allocatable, dimension(:,:)         :: rk_coef
-    integer, private                              :: num_probe_ts
+    !> ib_mass_fix: fluid mass at the start of the step, its change expected from the boundary fluxes, mass taken back so far
+    real(wp)                              :: ib_mf_m0 = 0._wp, ib_mf_d = 0._wp, ib_mf_total = 0._wp
+    real(wp), allocatable, dimension(:,:) :: rk_coef
+    integer, private                      :: num_probe_ts
 
     $:GPU_DECLARE(create='[q_cons_ts, q_prim_vf, q_T_sf, rhs_vf, q_prim_ts1, q_prim_ts2, rhs_mv, rhs_pb, rk_coef, stor, bc_type]')
 
@@ -462,6 +464,11 @@ contains
         ! Adaptive dt: initial stage
         if (adap_dt) call s_adaptive_dt_bubble(1)
 
+        if (ib .and. ib_mass_fix) then
+            call s_ib_fluid_mass(ib_mf_m0)
+            ib_mf_d = 0._wp
+        end if
+
         do s = 1, nstage
             call system_clock(stage_t0)
             ! mytime is read on the device by the GRCBC inflow ramp, so it has to be current before the RHS that
@@ -477,6 +484,9 @@ contains
             end if
             call s_compute_rhs(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, bc_type, rhs_vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, &
                                & t_step, s)
+
+            ! the stage update below, applied to the boundary inflow alone (rk_coef(s,1) + rk_coef(s,2) = rk_coef(s,4))
+            if (ib .and. ib_mass_fix) ib_mf_d = (rk_coef(s, 1)*ib_mf_d + rk_coef(s, 3)*dt*ib_mf_bflux)/rk_coef(s, 4)
 
             if (s == 1) then
                 if (run_time_info) then
@@ -601,6 +611,8 @@ contains
                 time_avg = min(time_avg, stage_time)
             end if
         end do
+
+        if (ib .and. ib_mass_fix) call s_ib_mass_fix(t_step)
 
         ! Operator-split reaction: integrate the stiff chemistry ODE per cell after the flow update,
         ! with sub-stepping, instead of adding the reaction source to the flow RHS (chem_params%reaction_substeps > 0).
@@ -1155,5 +1167,104 @@ contains
         end if
 
     end subroutine s_finalize_time_steppers_module
+
+    !> ib_mass_fix: mass of the gas in the fluid cells (marker 0), all ranks
+    impure subroutine s_ib_fluid_mass(mass)
+
+        real(wp), intent(out) :: mass
+        real(wp)              :: ml, vol
+        integer               :: i, j, k, l
+
+        ml = 0._wp
+        $:GPU_PARALLEL_LOOP(private='[i, j, k, l, vol]', collapse=3, reduction='[[ml]]', reductionOp='[+]')
+        do l = 0, p
+            do k = 0, n
+                do j = 0, m
+                    if (ib_markers%sf(j, k, l) == 0) then
+                        vol = dx(j)*dy(k)
+                        if (p > 0) vol = vol*dz(l)
+                        $:GPU_LOOP(parallelism='[seq]')
+                        do i = eqn_idx%cont%beg, eqn_idx%cont%end
+                            ml = ml + q_cons_ts(1)%vf(i)%sf(j, k, l)*vol
+                        end do
+                    end if
+                end do
+            end do
+        end do
+        $:END_GPU_PARALLEL_LOOP()
+        mass = ml
+        if (num_procs > 1) call s_mpi_allreduce_sum(ml, mass)
+
+    end subroutine s_ib_fluid_mass
+
+    !> ib_mass_fix: a rigid body is impermeable, so over a time step the fluid mass may change only by what crossed the domain
+    !! boundary. Whatever else the step left behind (fresh and covered cells, fluxes through the ghost-cell staircase of a sweeping
+    !! wall, stage mixing of cells that changed side) is taken back from the fluid cells next to a body, each with its own velocity
+    !! and specific energy (continuity, momentum and energy scaled by one factor, volume fractions kept).
+    impure subroutine s_ib_mass_fix(t_step)
+
+        integer, intent(in) :: t_step
+        real(wp)            :: m1, r, ml, ml_glb, fac, vol
+        integer             :: i, j, k, l, u
+        logical             :: nb
+
+        call s_ib_fluid_mass(m1)
+        r = m1 - ib_mf_m0 - ib_mf_d
+
+        ml = 0._wp
+        $:GPU_PARALLEL_LOOP(private='[i, j, k, l, vol, nb]', collapse=3, reduction='[[ml]]', reductionOp='[+]')
+        do l = 0, p
+            do k = 0, n
+                do j = 0, m
+                    if (ib_markers%sf(j, k, l) == 0) then
+                        nb = ib_markers%sf(j - 1, k, l) /= 0 .or. ib_markers%sf(j + 1, k, l) /= 0
+                        if (n > 0) nb = nb .or. ib_markers%sf(j, k - 1, l) /= 0 .or. ib_markers%sf(j, k + 1, l) /= 0
+                        if (p > 0) nb = nb .or. ib_markers%sf(j, k, l - 1) /= 0 .or. ib_markers%sf(j, k, l + 1) /= 0
+                        if (nb) then
+                            vol = dx(j)*dy(k)
+                            if (p > 0) vol = vol*dz(l)
+                            $:GPU_LOOP(parallelism='[seq]')
+                            do i = eqn_idx%cont%beg, eqn_idx%cont%end
+                                ml = ml + q_cons_ts(1)%vf(i)%sf(j, k, l)*vol
+                            end do
+                        end if
+                    end if
+                end do
+            end do
+        end do
+        $:END_GPU_PARALLEL_LOOP()
+        ml_glb = ml
+        if (num_procs > 1) call s_mpi_allreduce_sum(ml, ml_glb)
+        if (ml_glb <= 0._wp) return
+
+        fac = 1._wp - r/ml_glb
+        $:GPU_PARALLEL_LOOP(private='[i, j, k, l, nb]', collapse=3, copyin='[fac]')
+        do l = 0, p
+            do k = 0, n
+                do j = 0, m
+                    if (ib_markers%sf(j, k, l) == 0) then
+                        nb = ib_markers%sf(j - 1, k, l) /= 0 .or. ib_markers%sf(j + 1, k, l) /= 0
+                        if (n > 0) nb = nb .or. ib_markers%sf(j, k - 1, l) /= 0 .or. ib_markers%sf(j, k + 1, l) /= 0
+                        if (p > 0) nb = nb .or. ib_markers%sf(j, k, l - 1) /= 0 .or. ib_markers%sf(j, k, l + 1) /= 0
+                        if (nb) then
+                            $:GPU_LOOP(parallelism='[seq]')
+                            do i = eqn_idx%cont%beg, eqn_idx%E
+                                q_cons_ts(1)%vf(i)%sf(j, k, l) = fac*q_cons_ts(1)%vf(i)%sf(j, k, l)
+                            end do
+                        end if
+                    end if
+                end do
+            end do
+        end do
+        $:END_GPU_PARALLEL_LOOP()
+
+        ib_mf_total = ib_mf_total + r
+        if (proc_rank == 0 .and. mod(t_step, 10) == 0) then
+            open (newunit=u, file=trim(case_dir) // '/ib_mass_fix.dat', position='append', action='write')
+            write (u, '(I10,4ES24.15)') t_step, mytime, m1 - r, r, ib_mf_total
+            close (u)
+        end if
+
+    end subroutine s_ib_mass_fix
 
 end module m_time_steppers

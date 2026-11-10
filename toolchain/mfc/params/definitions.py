@@ -712,6 +712,7 @@ def _load():
     _r("many_ib_patch_parallelism", LOG, {"ib"})
     _r("ib_second_order_vel", LOG, {"ib"})
     _r("ib_mass_cons", LOG, {"ib"})
+    _r("ib_mass_fix", LOG, {"ib"})
     _r("ib_ip_min_dist", REAL, {"ib"})
 
     # Probes
@@ -1498,6 +1499,7 @@ _nv(
     "many_ib_patch_parallelism",
     "ib_second_order_vel",
     "ib_mass_cons",
+    "ib_mass_fix",
     "ib_ip_min_dist",
     "tau_star",
     "cont_damage_s",

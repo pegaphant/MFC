@@ -359,6 +359,7 @@ This is enabled by adding ``'elliptic_smoothing': "T",`` and ``'elliptic_smoothi
 | `ib_second_order_vel` | Logical | Extrapolate the ghost-point velocity linearly through the boundary intercept. |
 | `ib_ip_min_dist`      | Real    | Minimum boundary-to-image-point distance, in local cell widths, for `ib_second_order_vel`. |
 | `ib_mass_cons`        | Logical | Wall flux at the faces between the fluid and the ghost cells of an immersed body (moving or at rest): no mass, no energy, momentum from the fluid-cell pressure only. Viscous fluxes are unchanged. |
+| `ib_mass_fix`         | Logical | Mass bookkeeping for immersed bodies: each time step the change of fluid mass not explained by the domain-boundary fluxes is removed from the fluid cells next to the bodies (conserved variables scaled). Log in `ib_mass_fix.dat`. |
 | `geometry`           | Integer | Geometry configuration of the patch.|
 | `x[y,z]_centroid`    | Real    | Centroid of the applied geometry in the [x,y,z]-direction. |
 | `length_x[y,z]`      | Real    | Length, if applicable, in the [x,y,z]-direction. |
