@@ -165,11 +165,25 @@ contains
         call s_mpi_allreduce_integer_sum(int(count([(f_needs_centroid_offset(patch_ib(i)), i=1, num_ibs)]), 8), n_need)
         centroid_offsets_active = n_need > 0_8
         if (centroid_offsets_active) then
-            do gid = 1, num_gbl_ibs
-                call s_get_neighborhood_idx(gid, i)
-                call s_compute_centroid_offset(gid, i)
-            end do
-            call s_restore_centroid_offsets(t_init)
+            if (f_centroid_offsets_stored()) then
+                ! Restart: the stored centroids (ib_state) and offsets (ib_offset) together place each body. Measuring here
+                ! would voxelise the body drawn above without its offset, i.e. at the wrong place, and replace the centroid.
+                call s_restore_centroid_offsets(t_init)
+                do i = 1, num_ibs
+                    $:GPU_UPDATE(device='[patch_ib(i)]')
+                end do
+                ! draw the bodies again, now with their offsets, so markers and levelset describe the same body
+                ib_markers%sf = 0._wp
+                $:GPU_UPDATE(device='[ib_markers%sf]')
+                call s_apply_ib_patches(ib_markers)
+                $:GPU_UPDATE(host='[ib_markers%sf]')
+                call s_check_every_patch_marked()
+            else
+                do gid = 1, num_gbl_ibs
+                    call s_get_neighborhood_idx(gid, i)
+                    call s_compute_centroid_offset(gid, i)
+                end do
+            end if
         end if
         do i = 1, num_ibs
             $:GPU_UPDATE(device='[patch_ib(i)]')
@@ -1597,6 +1611,21 @@ contains
         f_needs_centroid_offset = patch%moving_ibm /= 0 .and. any(patch%geometry == [4, 5, 11, 12])
 
     end function f_needs_centroid_offset
+
+    !> Restart with restart_data/ib_offset_<step>.dat: the offsets are read, not measured
+    impure logical function f_centroid_offsets_stored()
+
+        character(len=path_len + 2*name_len) :: file_loc
+        integer                              :: step
+
+        step = t_step_start
+        if (cfl_dt) step = n_start
+        f_centroid_offsets_stored = .false.
+        if (step == 0) return
+        write (file_loc, '(A,I0,A)') trim(case_dir) // '/restart_data/ib_offset_', step, '.dat'
+        inquire (file=trim(file_loc), exist=f_centroid_offsets_stored)
+
+    end function f_centroid_offsets_stored
 
     !> On restart, replace the re-measured centroid offsets with the ones the run was using (restart_data/ib_offset_<step>.dat,
     !! written with each checkpoint), and re-place kinematics-driven bodies about them. No file: the measured offsets stand.
