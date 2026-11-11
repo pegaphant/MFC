@@ -908,8 +908,6 @@ contains
 
         if (cont_damage) call s_compute_damage_state(q_cons_qp%vf, q_prim_qp%vf, rhs_vf)
 
-        if (ib .and. ib_mass_fix) call s_ib_mass_bflux()
-
         ! END: Additional physics and source terms
 
         if (run_time_info .or. probe_wrt .or. ib .or. euler_lagrange) then
@@ -1509,6 +1507,10 @@ contains
 
             call s_add_directional_advection_source_terms(idir, rhs_vf, q_cons_vf, q_prim_vf, flux_src_n_vf, Kterm)
         end select
+
+        ! ib_mass_fix: read the boundary fluxes of this direction now - flux_n(2:3) alias flux_n(1), so after the direction
+        ! loop only the last direction would be left
+        if (ib .and. ib_mass_fix) call s_ib_mass_bflux(idir)
 
     contains
 
@@ -2403,32 +2405,35 @@ contains
     !> ib_mass_fix: mass per second that enters the fluid through the faces of the domain boundary in this stage, read from the
     !! final face fluxes (after the characteristic boundary conditions) in the form the RHS uses them. A boundary that is a
     !! neighbouring rank is skipped; a face whose inner cell lies in a body carries nothing into the fluid.
-    impure subroutine s_ib_mass_bflux()
+    impure subroutine s_ib_mass_bflux(idir)
 
-        integer  :: i, k, l, q
-        real(wp) :: b, b_glb, area
-        logical  :: xb, xe, yb, ye, zb, ze
+        integer, intent(in) :: idir
+        integer             :: i, k, l, q
+        real(wp)            :: b, b_glb, area
+        logical             :: xb, xe, yb, ye, zb, ze
 
         xb = bc_x%beg < 0; xe = bc_x%end < 0
         yb = bc_y%beg < 0; ye = bc_y%end < 0
         zb = bc_z%beg < 0; ze = bc_z%end < 0
         b = 0._wp
 
-        $:GPU_PARALLEL_LOOP(private='[i, k, l, area]', collapse=2, copyin='[xb, xe]', reduction='[[b]]', reductionOp='[+]')
-        do l = 0, p
-            do k = 0, n
-                area = dy(k)
-                if (p > 0) area = area*dz(l)
-                $:GPU_LOOP(parallelism='[seq]')
-                do i = eqn_idx%cont%beg, eqn_idx%cont%end
-                    if (xb .and. ib_markers%sf(0, k, l) == 0) b = b + flux_n(1)%vf(i)%sf(-1, k, l)*area
-                    if (xe .and. ib_markers%sf(m, k, l) == 0) b = b - flux_n(1)%vf(i)%sf(m, k, l)*area
+        if (idir == 1) then
+            $:GPU_PARALLEL_LOOP(private='[i, k, l, area]', collapse=2, copyin='[xb, xe]', reduction='[[b]]', reductionOp='[+]')
+            do l = 0, p
+                do k = 0, n
+                    area = dy(k)
+                    if (p > 0) area = area*dz(l)
+                    $:GPU_LOOP(parallelism='[seq]')
+                    do i = eqn_idx%cont%beg, eqn_idx%cont%end
+                        if (xb .and. ib_markers%sf(0, k, l) == 0) b = b + flux_n(1)%vf(i)%sf(-1, k, l)*area
+                        if (xe .and. ib_markers%sf(m, k, l) == 0) b = b - flux_n(1)%vf(i)%sf(m, k, l)*area
+                    end do
                 end do
             end do
-        end do
-        $:END_GPU_PARALLEL_LOOP()
+            $:END_GPU_PARALLEL_LOOP()
+        end if
 
-        if (n > 0) then
+        if (n > 0 .and. idir == 2) then
             $:GPU_PARALLEL_LOOP(private='[i, q, l, area]', collapse=2, copyin='[yb, ye]', reduction='[[b]]', reductionOp='[+]')
             do l = 0, p
                 do q = 0, m
@@ -2444,7 +2449,7 @@ contains
             $:END_GPU_PARALLEL_LOOP()
         end if
 
-        if (p > 0) then
+        if (p > 0 .and. idir == 3) then
             $:GPU_PARALLEL_LOOP(private='[i, q, k, area]', collapse=2, copyin='[zb, ze]', reduction='[[b]]', reductionOp='[+]')
             do k = 0, n
                 do q = 0, m
@@ -2461,7 +2466,7 @@ contains
 
         b_glb = b
         if (num_procs > 1) call s_mpi_allreduce_sum(b, b_glb)
-        ib_mf_bflux = b_glb
+        ib_mf_bflux = ib_mf_bflux + b_glb
 
     end subroutine s_ib_mass_bflux
 

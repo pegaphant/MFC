@@ -482,6 +482,7 @@ contains
                                           & f_vel_ramp(bc_z%vel_in_ramp, bc_z%vel_in_t0, bc_z%vel_in_frac0, mytime)]
                 $:GPU_UPDATE(device='[bc_vel_ramp]')
             end if
+            if (ib .and. ib_mass_fix) ib_mf_bflux = 0._wp
             call s_compute_rhs(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, bc_type, rhs_vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, &
                                & t_step, s)
 
